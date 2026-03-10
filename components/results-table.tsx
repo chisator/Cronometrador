@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button'
 import type { Race, Participant } from '@/lib/types'
 import { Download, Trophy, Medal, Award } from 'lucide-react'
+import * as XLSX from 'xlsx'
 
 interface ResultsTableProps {
   race: Race
@@ -45,80 +46,110 @@ function getPositionIcon(position: number) {
   }
 }
 
-function exportToCSV(race: Race, participants: Participant[], gender: string) {
-  const finishedParticipants = participants
+function exportToExcel(race: Race, participants: Participant[], sheetName: string) {
+  const finished = participants
     .filter(p => p.elapsed_time_ms)
     .sort((a, b) => (a.elapsed_time_ms || 0) - (b.elapsed_time_ms || 0))
 
-  const unfinishedParticipants = participants.filter(p => !p.elapsed_time_ms)
+  const unfinished = participants.filter(p => !p.elapsed_time_ms)
 
-  const headers = ['Posicion', 'Dorsal', 'Nombre', 'Tiempo']
+  // Trackers for category ranking
+  const catCounts: Record<string, number> = {}
+
   const rows = [
-    ...finishedParticipants.map((p, index) => [
-      index + 1,
-      p.dorsal,
-      p.name,
-      formatElapsedTime(p.elapsed_time_ms || 0)
-    ]),
-    ...unfinishedParticipants.map(p => [
-      'DNF',
-      p.dorsal,
-      p.name,
-      '-'
-    ])
+    ...finished.map((p, index) => {
+      const catKey = p.category ? String(p.category).toUpperCase() : 'UNICA'
+      catCounts[catKey] = (catCounts[catKey] || 0) + 1
+
+      return {
+        'Nº NADADOR': p.dorsal,
+        'TIEMPO': formatElapsedTime(p.elapsed_time_ms || 0),
+        'POSICION GRAL': index + 1,
+        'Pos. X Dist. Sexo Cat. Y Tiempo': catCounts[catKey],
+        'Pos. X Dist. Sexo Y Tiempo': index + 1, // Same as general if filtered by Gender
+        'APELLIDO Y NOMBRE': p.name,
+        'MODALIDAD': p.modality || 'INDIVIDUAL',
+        'SEXO': p.gender === 'male' ? 'MASCULINO' : 'FEMENINO',
+        'CATEGORIA': p.category || '',
+        'DISTANCIA': p.distance || '',
+        'INSTITUCION': p.institution || ''
+      }
+    }),
+    ...unfinished.map(p => ({
+      'Nº NADADOR': p.dorsal,
+      'TIEMPO': '#N/D',
+      'POSICION GRAL': '#N/D',
+      'Pos. X Dist. Sexo Cat. Y Tiempo': '#N/D',
+      'Pos. X Dist. Sexo Y Tiempo': '#N/D',
+      'APELLIDO Y NOMBRE': p.name,
+      'MODALIDAD': p.modality || 'INDIVIDUAL',
+      'SEXO': p.gender === 'male' ? 'MASCULINO' : 'FEMENINO',
+      'CATEGORIA': p.category || '',
+      'DISTANCIA': p.distance || '',
+      'INSTITUCION': p.institution || ''
+    }))
   ]
 
-  const csvContent = [
-    `Carrera: ${race.name}`,
-    `Fecha: ${race.date}`,
-    `Categoria: ${gender}`,
-    '',
-    headers.join(','),
-    ...rows.map(row => row.join(','))
-  ].join('\n')
+  const ws = XLSX.utils.json_to_sheet(rows)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, sheetName)
 
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
-  link.download = `${race.name.replace(/\s+/g, '_')}_${gender}.csv`
-  link.click()
+  XLSX.writeFile(wb, `${race.name.replace(/\s+/g, '_')}_${sheetName}.xlsx`)
 }
 
-function exportAllToCSV(race: Race, maleParticipants: Participant[], femaleParticipants: Participant[]) {
-  const maleFinished = maleParticipants
+function exportAllToExcel(race: Race, maleParticipants: Participant[], femaleParticipants: Participant[]) {
+  const allParticipants = [...maleParticipants, ...femaleParticipants]
+  
+  const finished = allParticipants
     .filter(p => p.elapsed_time_ms)
     .sort((a, b) => (a.elapsed_time_ms || 0) - (b.elapsed_time_ms || 0))
   
-  const femaleFinished = femaleParticipants
-    .filter(p => p.elapsed_time_ms)
-    .sort((a, b) => (a.elapsed_time_ms || 0) - (b.elapsed_time_ms || 0))
+  const unfinished = allParticipants.filter(p => !p.elapsed_time_ms)
 
-  const maleUnfinished = maleParticipants.filter(p => !p.elapsed_time_ms)
-  const femaleUnfinished = femaleParticipants.filter(p => !p.elapsed_time_ms)
+  // Trackers for positions
+  const genderCounts = { male: 0, female: 0 }
+  const catCounts: Record<string, number> = {}
 
-  const headers = ['Categoria', 'Posicion', 'Dorsal', 'Nombre', 'Tiempo']
   const rows = [
-    ...maleFinished.map((p, index) => ['Masculino', index + 1, p.dorsal, p.name, formatElapsedTime(p.elapsed_time_ms || 0)]),
-    ...maleUnfinished.map(p => ['Masculino', 'DNF', p.dorsal, p.name, '-']),
-    ...femaleFinished.map((p, index) => ['Femenino', index + 1, p.dorsal, p.name, formatElapsedTime(p.elapsed_time_ms || 0)]),
-    ...femaleUnfinished.map(p => ['Femenino', 'DNF', p.dorsal, p.name, '-'])
+    ...finished.map((p, index) => {
+      const catKey = `${p.gender}_${p.category || 'UNICA'}`.toUpperCase()
+      genderCounts[p.gender]++
+      catCounts[catKey] = (catCounts[catKey] || 0) + 1
+
+      return {
+        'Nº NADADOR': p.dorsal,
+        'TIEMPO': formatElapsedTime(p.elapsed_time_ms || 0),
+        'POSICION GRAL': index + 1,
+        'Pos. X Dist. Sexo Cat. Y Tiempo': catCounts[catKey],
+        'Pos. X Dist. Sexo Y Tiempo': genderCounts[p.gender],
+        'APELLIDO Y NOMBRE': p.name,
+        'MODALIDAD': p.modality || 'INDIVIDUAL',
+        'SEXO': p.gender === 'male' ? 'MASCULINO' : 'FEMENINO',
+        'CATEGORIA': p.category || '',
+        'DISTANCIA': p.distance || '',
+        'INSTITUCION': p.institution || ''
+      }
+    }),
+    ...unfinished.map(p => ({
+      'Nº NADADOR': p.dorsal,
+      'TIEMPO': '#N/D',
+      'POSICION GRAL': '#N/D',
+      'Pos. X Dist. Sexo Cat. Y Tiempo': '#N/D',
+      'Pos. X Dist. Sexo Y Tiempo': '#N/D',
+      'APELLIDO Y NOMBRE': p.name,
+      'MODALIDAD': p.modality || 'INDIVIDUAL',
+      'SEXO': p.gender === 'male' ? 'MASCULINO' : 'FEMENINO',
+      'CATEGORIA': p.category || '',
+      'DISTANCIA': p.distance || '',
+      'INSTITUCION': p.institution || ''
+    }))
   ]
 
-  const csvContent = [
-    `Carrera: ${race.name}`,
-    `Fecha: ${race.date}`,
-    `Ubicacion: ${race.location || '-'}`,
-    `Distancia: ${race.distance || '-'}`,
-    '',
-    headers.join(','),
-    ...rows.map(row => row.join(','))
-  ].join('\n')
+  const ws = XLSX.utils.json_to_sheet(rows)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Inscripciones_Cronometraje')
 
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
-  link.download = `${race.name.replace(/\s+/g, '_')}_Resultados.csv`
-  link.click()
+  XLSX.writeFile(wb, `${race.name.replace(/\s+/g, '_')}_Cronometraje.xlsx`)
 }
 
 export function ResultsTable({ race, maleParticipants, femaleParticipants }: ResultsTableProps) {
@@ -139,11 +170,11 @@ export function ResultsTable({ race, maleParticipants, femaleParticipants }: Res
         <h2 className="text-xl font-semibold">Resultados Finales</h2>
         <Button 
           variant="outline" 
-          onClick={() => exportAllToCSV(race, maleParticipants, femaleParticipants)}
+          onClick={() => exportAllToExcel(race, maleParticipants, femaleParticipants)}
           className="gap-2"
         >
           <Download className="h-4 w-4" />
-          Exportar Todo (CSV)
+          Exportar Todo (Excel)
         </Button>
       </div>
 
@@ -152,7 +183,7 @@ export function ResultsTable({ race, maleParticipants, femaleParticipants }: Res
           title="Masculino"
           finished={maleFinished}
           dnf={maleDNF}
-          onExport={() => exportToCSV(race, maleParticipants, 'Masculino')}
+          onExport={() => exportToExcel(race, maleParticipants, 'Masculino')}
           colorClass="text-male"
           bgClass="bg-male-light"
         />
@@ -160,7 +191,7 @@ export function ResultsTable({ race, maleParticipants, femaleParticipants }: Res
           title="Femenino"
           finished={femaleFinished}
           dnf={femaleDNF}
-          onExport={() => exportToCSV(race, femaleParticipants, 'Femenino')}
+          onExport={() => exportToExcel(race, femaleParticipants, 'Femenino')}
           colorClass="text-female"
           bgClass="bg-female-light"
         />

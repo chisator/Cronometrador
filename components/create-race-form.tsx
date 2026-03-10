@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createRace } from '@/app/actions'
+import { db } from '@/lib/db/local'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,13 +19,23 @@ export function CreateRaceForm() {
     setLoading(true)
     setError(null)
     
-    const result = await createRace(formData)
-    
-    if (result.success && result.race) {
+    try {
+      const id = crypto.randomUUID()
+      await db.races.add({
+        id,
+        name: formData.get('name') as string,
+        date: formData.get('date') as string,
+        location: formData.get('location') as string,
+        distance: formData.get('distance') as string,
+        status: 'pending',
+        male_start_time: null,
+        female_start_time: null,
+        created_at: new Date().toISOString()
+      })
       setIsOpen(false)
-      router.push(`/race/${result.race.id}`)
-    } else {
-      setError(result.error || 'Error al crear la carrera')
+      router.push(`/race/${id}`)
+    } catch (e) {
+      setError('Error al crear la carrera localmente')
     }
     
     setLoading(false)

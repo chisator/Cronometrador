@@ -1,10 +1,13 @@
-import { getRaces } from './actions'
+'use client'
+
+import { useLiveQuery } from 'dexie-react-hooks'
+import { db } from '@/lib/db/local'
 import { RaceList } from '@/components/race-list'
 import { CreateRaceForm } from '@/components/create-race-form'
 import { Waves } from 'lucide-react'
 
-export default async function HomePage() {
-  const races = await getRaces()
+export default function HomePage() {
+  const races = useLiveQuery(() => db.races.orderBy('date').reverse().toArray())
 
   return (
     <main className="min-h-screen bg-background">
@@ -27,7 +30,7 @@ export default async function HomePage() {
           <CreateRaceForm />
         </div>
         
-        <RaceList races={races} />
+        <RaceList races={races || []} />
       </div>
     </main>
   )

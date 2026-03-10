@@ -1,23 +1,31 @@
-import { notFound } from 'next/navigation'
-import { getRace, getParticipants } from '@/app/actions'
+'use client'
+
+import { notFound, useParams } from 'next/navigation'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { db } from '@/lib/db/local'
 import { RaceHeader } from '@/components/race-header'
 import { ParticipantManager } from '@/components/participant-manager'
 import { RaceTimer } from '@/components/race-timer'
 import { ResultsTable } from '@/components/results-table'
 
-interface RacePageProps {
-  params: Promise<{ id: string }>
-}
-
-export default async function RacePage({ params }: RacePageProps) {
-  const { id } = await params
-  const race = await getRace(id)
+export default function RacePage() {
+  const { id } = useParams<{ id: string }>()
   
-  if (!race) {
+  const race = useLiveQuery(() => db.races.get(id), [id])
+  const participants = useLiveQuery(() => db.participants.where('race_id').equals(id).toArray(), [id])
+
+  if (race === undefined || participants === undefined) {
+    return (
+      <main className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-muted-foreground">Cargando datos locales...</p>
+      </main>
+    )
+  }
+
+  if (race === null) {
     notFound()
   }
 
-  const participants = await getParticipants(id)
   const maleParticipants = participants.filter(p => p.gender === 'male')
   const femaleParticipants = participants.filter(p => p.gender === 'female')
 

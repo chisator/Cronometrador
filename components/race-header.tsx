@@ -4,9 +4,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { deleteRace, updateRaceStatus, finishRace } from '@/app/actions'
+import { db } from '@/lib/db/local'
+import { syncData } from '@/lib/db/sync'
 import type { Race } from '@/lib/types'
-import { ArrowLeft, Calendar, MapPin, Ruler, Users, Play, Flag, Trash2 } from 'lucide-react'
+import { ArrowLeft, Calendar, MapPin, Ruler, Users, Play, Flag, Trash2, CloudUpload } from 'lucide-react'
 import { useState } from 'react'
 
 interface RaceHeaderProps {
@@ -37,19 +38,31 @@ function formatDate(dateString: string) {
 export function RaceHeader({ race, participantCount }: RaceHeaderProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncSuccess, setSyncSuccess] = useState<boolean | null>(null)
+
+  async function handleSync() {
+    setSyncing(true)
+    try {
+      await syncData()
+      setSyncSuccess(true)
+      setTimeout(() => setSyncSuccess(null), 3000)
+    } catch {
+      setSyncSuccess(false)
+    }
+    setSyncing(false)
+  }
 
   async function handleStartRace() {
     setLoading(true)
-    await updateRaceStatus(race.id, 'in_progress')
-    router.refresh()
+    await db.races.update(race.id, { status: 'in_progress' })
     setLoading(false)
   }
 
   async function handleFinishRace() {
     if (confirm('Seguro que deseas finalizar la carrera? No podras registrar mas tiempos.')) {
       setLoading(true)
-      await finishRace(race.id)
-      router.refresh()
+      await db.races.update(race.id, { status: 'finished' })
       setLoading(false)
     }
   }
@@ -57,7 +70,7 @@ export function RaceHeader({ race, participantCount }: RaceHeaderProps) {
   async function handleDeleteRace() {
     if (confirm('Seguro que deseas eliminar esta carrera? Esta accion no se puede deshacer.')) {
       setLoading(true)
-      await deleteRace(race.id)
+      await db.races.delete(race.id)
       router.push('/')
     }
   }
@@ -103,6 +116,17 @@ export function RaceHeader({ race, participantCount }: RaceHeaderProps) {
             </div>
 
             <div className="flex gap-2">
+              <Button 
+                onClick={handleSync} 
+                disabled={syncing} 
+                variant="outline" 
+                size="icon" 
+                title="Sincronizar en la nube"
+                className={syncSuccess ? "text-green-500 border-green-500" : ""}
+              >
+                <CloudUpload className={`h-4 w-4 ${syncing ? 'animate-pulse' : ''}`} />
+                <span className="sr-only">Sincronizar</span>
+              </Button>
               {race.status === 'pending' && participantCount > 0 && (
                 <Button onClick={handleStartRace} disabled={loading} className="gap-2">
                   <Play className="h-4 w-4" />

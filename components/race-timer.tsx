@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { startRace, recordFinishByDorsal, clearFinishTime } from '@/app/actions'
+import { db } from '@/lib/db/local'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -113,13 +113,18 @@ function GenderTimer({ gender, label, startTime, participants, raceId }: GenderT
 
   const handleStart = useCallback(async () => {
     setLoading(true)
-    const result = await startRace(raceId, gender)
-    if (!result.success) {
-      setFeedback({ type: 'error', message: result.error || 'Error al iniciar' })
+    try {
+      const startTimeVal = new Date().toISOString()
+      const updateField = gender === 'male' ? 'male_start_time' : 'female_start_time'
+      await db.races.update(raceId, {
+        [updateField]: startTimeVal,
+        status: 'in_progress'
+      })
+    } catch {
+      setFeedback({ type: 'error', message: 'Error al iniciar localmente' })
     }
     setLoading(false)
-    router.refresh()
-  }, [raceId, gender, router])
+  }, [raceId, gender])
 
   const handleRecordFinish = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
@@ -138,29 +143,43 @@ function GenderTimer({ gender, label, startTime, participants, raceId }: GenderT
       return
     }
 
+    if (participant.finish_time) {
+      setFeedback({ type: 'error', message: 'El participante ya tiene tiempo registrado' })
+      return
+    }
+
     setLoading(true)
-    const result = await recordFinishByDorsal(raceId, dorsal, startTime)
-    
-    if (result.success && result.participant) {
+    try {
+      const finishTimeDate = new Date()
+      const startDate = new Date(startTime)
+      const elapsedMs = finishTimeDate.getTime() - startDate.getTime()
+
+      await db.participants.update(participant.id, {
+        finish_time: finishTimeDate.toISOString(),
+        elapsed_time_ms: elapsedMs
+      })
+
       setFeedback({ 
         type: 'success', 
-        message: `${result.participant.name} - ${formatElapsedTime(result.participant.elapsed_time_ms || 0)}` 
+        message: `${participant.name} - ${formatElapsedTime(elapsedMs)}` 
       })
       setDorsalInput('')
-    } else {
-      setFeedback({ type: 'error', message: result.error || 'Error al registrar' })
+    } catch {
+      setFeedback({ type: 'error', message: 'Error al registrar localmente' })
     }
     
     setLoading(false)
-    router.refresh()
-  }, [dorsalInput, startTime, raceId, participants, label, router])
+  }, [dorsalInput, startTime, participants, label])
 
   const handleClearTime = useCallback(async (participantId: string) => {
     if (confirm('Seguro que deseas borrar el tiempo de este participante?')) {
-      await clearFinishTime(participantId, raceId)
-      router.refresh()
+      await db.participants.update(participantId, {
+        finish_time: null,
+        elapsed_time_ms: null,
+        position: null
+      })
     }
-  }, [raceId, router])
+  }, [])
 
   const pendingParticipants = participants.filter(p => !p.finish_time)
   const finishedParticipants = participants
